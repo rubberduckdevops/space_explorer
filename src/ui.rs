@@ -1,4 +1,4 @@
-use macroquad::prelude::*;
+use macroquad::{prelude::*, text};
 use macroquad::ui::{hash, root_ui, widgets, Skin};
 
 use crate::chunk::World;
@@ -89,6 +89,29 @@ pub fn pause_menu() -> Option<PauseAction> {
     }
     if button("Quit", centered_button(440.0)) {
         return Some(PauseAction::Quit);
+    }
+    None
+}
+
+pub enum StartMenuAction {
+    Start
+}
+
+pub fn start_menu(texture: &Texture2D) -> Option<StartMenuAction> {
+    draw_rectangle(
+        0.0,
+        0.0,
+        screen_width(),
+        screen_height(),
+        Color::new(0.0, 0.0, 0.0, 0.6),
+    );
+    let image_width = texture.width() / 2.0;
+    let image_height = texture.height() /2.0;
+    draw_texture(texture, screen_width() / 2.0 - image_width, screen_height() /2.0 - image_height, WHITE);
+    draw_centered("Space Explorer - v0.0.1", 50.0, 56, WHITE);
+    
+    if button("START", centered_button(screen_height() - 100.0)) {
+        return Some(StartMenuAction::Start)
     }
     None
 }

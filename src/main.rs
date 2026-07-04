@@ -4,6 +4,8 @@ mod common;
 mod player;
 mod ui;
 
+use std::collections::HashMap;
+
 use crate::{
     chunk::{
         LOAD_RADIUS, World, draw_nebula, draw_world, hash_seed_string, nearest_dungeon,
@@ -53,6 +55,9 @@ async fn main() {
         .map(|s| Player::load_player(s.player.clone()))
         .unwrap_or_else(|| Player::new());
 
+    log::info!("Loading 2D Assets");
+    let cyborg_ferris: Texture2D = load_texture("assets/ferris_cyborg.png").await.unwrap();
+
     let mut username = String::new();
     let menu_skin = ui::build_menu_skin();
     // Start Game loop here
@@ -66,10 +71,13 @@ async fn main() {
         match &mut game_state {
             GameState::Start => {
                 set_default_camera();
-                if let Some(ui::NameEntryAction::Confirm) = ui::name_entry(&mut username, &menu_skin)
-                {
-                    next_state = Some(GameState::Exploring);
+                match ui::start_menu(&cyborg_ferris) {
+                    Some(ui::StartMenuAction::Start) => {
+                        next_state = Some(GameState::Exploring);
+                    }
+                    None => {}
                 }
+                ui::start_menu(&cyborg_ferris);
             }
             GameState::Exploring => {
                 // Player Movement
