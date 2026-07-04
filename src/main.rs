@@ -5,7 +5,10 @@ mod seed;
 
 use crate::{
     chunk::{Chunk, ObjectKind, SpaceObject, generate_chunk},
-    common::{StarLayer, draw_bottom_left, draw_centered},
+    common::{
+        StarLayer, draw_bottom_left, draw_centered,
+        save::{load_game, save_game},
+    },
     player::{Player, PlayerShip},
     seed::{SeedRng, World, hash_seed_string},
 };
@@ -74,11 +77,12 @@ fn draw_world(world: &World, ship: &Player) {
             }
             if let Some(chunk) = world.loaded.get(&(cx, cy)) {
                 for obj in &chunk.objects {
-                    let color = if obj.kind == ObjectKind::Dungeon && ship.is_dungeon_cleared(&obj.id){
-                        DARKGRAY
-                    } else {
-                        object_color(obj.kind)
-                    };
+                    let color =
+                        if obj.kind == ObjectKind::Dungeon && ship.is_dungeon_cleared(&obj.id) {
+                            DARKGRAY
+                        } else {
+                            object_color(obj.kind)
+                        };
                     draw_circle(obj.x, obj.y, obj.radius, color);
                 }
             }
@@ -193,12 +197,22 @@ impl CombatInstance {
 async fn main() {
     // Initialize
     log::info!("Initalizing Systems");
-    log::info!("World Seed String: {}", WORLD_SEED_STRING);
-    let world_seed = hash_seed_string(WORLD_SEED_STRING);
+    log::info!("Loading Previous Save");
+    let save = load_game();
+    let seed_string = save
+        .as_ref()
+        .map(|s| s.seed_string.clone())
+        .unwrap_or_else(|| WORLD_SEED_STRING.to_string());
+
+    log::info!("World Seed String: {}", seed_string);
+    let world_seed = hash_seed_string(&seed_string);
     log::info!("World Seed Hash: {}", &world_seed);
     let mut world = World::new(world_seed);
 
-    let mut player = Player::new();
+    let mut player = save
+        .as_ref()
+        .map(|s| Player::load_player(s.player.clone()))
+        .unwrap_or_else(|| Player::new());
 
     let layers = [
         StarLayer::new(40, 600.0, 0.15, 1.0, Color::new(0.6, 0.6, 0.7, 1.0)),
@@ -231,6 +245,9 @@ async fn main() {
                 };
                 if is_key_pressed(KeyCode::LeftShift) || is_key_released(KeyCode::LeftShift) {
                     player.ship.togle_hyperdrive();
+                }
+                if is_key_pressed(KeyCode::P) {
+                    save_game(&seed_string, &player);
                 }
                 let ship_chunk = world_to_chunk(player.ship.pos.x, player.ship.pos.y);
                 world.stream_around(ship_chunk, LOAD_RADIUS);

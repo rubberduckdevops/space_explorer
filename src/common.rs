@@ -83,3 +83,54 @@ pub fn draw_bottom_right(lines: &[&str], font_size: u16, color: Color) {
         );
     }
 }
+
+pub mod save {
+    use std::collections::HashSet;
+
+    use serde::{Deserialize, Serialize};
+
+    use crate::{
+        player::{self, Player},
+        seed,
+    };
+    const SAVE_PATH: &str = "explorer_save.json";
+
+    #[derive(Serialize, Deserialize, Clone)]
+    pub struct PlayerSaveData {
+        pub ship_pos_x: f32,
+        pub ship_pos_y: f32,
+        pub credits: u32,
+        pub speed_level: u32,
+        pub cleared_dungeons: HashSet<u64>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct SaveData {
+        pub seed_string: String,
+        pub player: PlayerSaveData,
+    }
+
+    pub fn save_game(seed_string: &str, player_data: &Player) {
+        log::info!("Saving Data...");
+        let data = SaveData {
+            seed_string: seed_string.to_string(),
+            player: player_data.save_player(),
+        };
+        match serde_json::to_string_pretty(&data) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(SAVE_PATH, json) {
+                    log::error!("Could not write save: {e}");
+                    eprintln!("could not write save: {e}")
+                }
+            }
+            Err(e) => {
+                log::error!("Could not seralize save: {e}");
+                eprintln!("Could not seralize save: {e}");
+            }
+        }
+    }
+    pub fn load_game() -> Option<SaveData> {
+        let text = std::fs::read_to_string(SAVE_PATH).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+}

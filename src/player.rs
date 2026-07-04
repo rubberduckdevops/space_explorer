@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 
-use crate::common::draw_centered;
+use crate::common::{draw_centered, save::PlayerSaveData};
 use macroquad::prelude::*;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct PlayerShip {
     pub pos: Vec2,
     pub speed: f32,
@@ -33,7 +34,7 @@ impl PlayerShip {
         }
     }
 }
-
+#[derive(Clone, Debug)]
 pub struct Player {
     pub ship: PlayerShip,
     pub credits: u32,
@@ -50,8 +51,27 @@ impl Player {
             cleared_dungeons: HashSet::new(),
         }
     }
-    pub fn load_player(player_id: u32) -> Player {
-        todo!()
+    pub fn load_player(saved_player: PlayerSaveData) -> Player {
+        log::info!("Loading Player from save");
+        let mut player_ship = PlayerShip::new();
+        player_ship.pos.x = saved_player.ship_pos_x;
+        player_ship.pos.y = saved_player.ship_pos_y;
+
+        Player {
+            ship: player_ship,
+            credits: saved_player.credits,
+            speed_level: saved_player.speed_level,
+            cleared_dungeons: saved_player.cleared_dungeons,
+        }
+    }
+    pub fn save_player(&self) -> PlayerSaveData {
+        PlayerSaveData {
+            ship_pos_x: self.ship.pos.x,
+            ship_pos_y: self.ship.pos.y,
+            credits: self.credits,
+            speed_level: self.speed_level,
+            cleared_dungeons: self.cleared_dungeons.clone(),
+        }
     }
     pub fn clear_dungeon(&mut self, dungeon_id: u64) {
         // Maybe do some validation one day here??
