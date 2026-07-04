@@ -42,3 +42,44 @@ impl StarLayer {
         }
     }
 }
+
+pub fn draw_centered(text: &str, y: f32, font_size: u16, color: Color) {
+    let d = measure_text(text, None, font_size, 1.0);
+    draw_text(
+        text,
+        screen_width() / 2.0 - d.width / 2.0,
+        y,
+        font_size as f32,
+        color,
+    );
+}
+
+const MARGIN: f32 = 12.0;
+const LINE_SPACING: f32 = 4.0;
+
+// draw lines of text stacked upward from the bottom-left corner
+pub fn draw_bottom_left(lines: &[&str], font_size: u16, color: Color) {
+    let line_height = font_size as f32 + LINE_SPACING;
+    // last line sits at the bottom, earlier lines stack above it
+    for (i, line) in lines.iter().rev().enumerate() {
+        let y = screen_height() - MARGIN - line_height * i as f32;
+        draw_text(line, MARGIN, y, font_size as f32, color);
+    }
+}
+
+// draw lines of text stacked upward from the bottom-right corner
+pub fn draw_bottom_right(lines: &[&str], font_size: u16, color: Color) {
+    let line_height = font_size as f32 + LINE_SPACING;
+    // last line sits at the bottom, earlier lines stack above it
+    for (i, line) in lines.iter().rev().enumerate() {
+        let d = measure_text(line, None, font_size, 1.0);
+        let y = screen_height() - MARGIN - line_height * i as f32;
+        draw_text(
+            line,
+            screen_width() - MARGIN - d.width,
+            y,
+            font_size as f32,
+            color,
+        );
+    }
+}

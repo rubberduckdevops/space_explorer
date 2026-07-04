@@ -1,26 +1,15 @@
 mod chunk;
 mod common;
+mod player;
 mod seed;
 
 use crate::{
     chunk::{Chunk, ObjectKind, SpaceObject, generate_chunk},
-    common::StarLayer,
+    common::{StarLayer, draw_bottom_left, draw_centered},
+    player::{Player, PlayerShip},
     seed::{SeedRng, World, hash_seed_string},
 };
 use macroquad::prelude::*;
-
-#[derive(Clone)]
-struct PlayerShip {
-    pos: Vec2,
-    speed: f32,
-    hyper_drive: bool,
-}
-
-impl PlayerShip {
-    fn draw(&self) {
-        draw_circle(self.pos.x, self.pos.y, 16.0, YELLOW);
-    }
-}
 
 enum GameState {
     Exploring,
@@ -65,11 +54,11 @@ fn visible_chunk_range(ship_x: f32, ship_y: f32) -> ((i32, i32), (i32, i32)) {
     (min, max)
 }
 
-fn draw_world(world: &World, ship: &PlayerShip) {
+fn draw_world(world: &World, ship: &Player) {
     let half_w = screen_width() / 2.0;
     let half_h = screen_height() / 2.0;
-    let (min_cx, min_cy) = world_to_chunk(ship.pos.x - half_w, ship.pos.y - half_h);
-    let (max_cx, max_cy) = world_to_chunk(ship.pos.x + half_w, ship.pos.y + half_h);
+    let (min_cx, min_cy) = world_to_chunk(ship.ship.pos.x - half_w, ship.ship.pos.y - half_h);
+    let (max_cx, max_cy) = world_to_chunk(ship.ship.pos.x + half_w, ship.ship.pos.y + half_h);
     for cy in min_cy..=max_cy {
         for cx in min_cx..=max_cx {
             if CHUNK_DEBUG {
@@ -85,24 +74,29 @@ fn draw_world(world: &World, ship: &PlayerShip) {
             }
             if let Some(chunk) = world.loaded.get(&(cx, cy)) {
                 for obj in &chunk.objects {
-                    draw_circle(obj.x, obj.y, obj.radius, object_color(obj.kind));
+                    let color = if obj.kind == ObjectKind::Dungeon && ship.is_dungeon_cleared(&obj.id){
+                        DARKGRAY
+                    } else {
+                        object_color(obj.kind)
+                    };
+                    draw_circle(obj.x, obj.y, obj.radius, color);
                 }
             }
         }
     }
 }
 
-fn nearest_dungeon(world: &World, ship: &PlayerShip) -> Option<SpaceObject> {
+fn nearest_dungeon(world: &World, player: &Player) -> Option<SpaceObject> {
     let mut best: Option<SpaceObject> = None;
     let mut best_dist = INTERACT_RANGE;
 
     for chunk in world.loaded.values() {
         for obj in &chunk.objects {
-            if obj.kind != ObjectKind::Dungeon {
+            if obj.kind != ObjectKind::Dungeon || player.is_dungeon_cleared(&obj.id) {
                 continue;
             }
-            let dx = obj.x - ship.pos.x;
-            let dy = obj.y - ship.pos.y;
+            let dx = obj.x - player.ship.pos.x;
+            let dy = obj.y - player.ship.pos.y;
             let dist = (dx * dx + dy * dy).sqrt();
             if dist < best_dist {
                 best_dist = dist;
@@ -183,7 +177,7 @@ impl CombatInstance {
             GRAY,
         );
         // HUD in screen space
-        
+
         draw_text(&format!("Score: {}", self.score), 12.0, 32.0, 30.0, WHITE);
         draw_text(
             &format!("Survive: {:.1}s", self.time_left.max(0.0)),
@@ -204,11 +198,7 @@ async fn main() {
     log::info!("World Seed Hash: {}", &world_seed);
     let mut world = World::new(world_seed);
 
-    let mut ship = PlayerShip {
-        pos: vec2(0.0, 0.0),
-        speed: 300.0,
-        hyper_drive: false,
-    };
+    let mut player = Player::new();
 
     let layers = [
         StarLayer::new(40, 600.0, 0.15, 1.0, Color::new(0.6, 0.6, 0.7, 1.0)),
@@ -228,49 +218,43 @@ async fn main() {
             GameState::Exploring => {
                 // Player Movement
                 if is_key_down(KeyCode::Right) || is_key_down(KeyCode::D) {
-                    ship.pos.x += ship.speed * delta;
+                    player.ship.pos.x += player.ship.speed * delta;
                 };
                 if is_key_down(KeyCode::Left) || is_key_down(KeyCode::A) {
-                    ship.pos.x -= ship.speed * delta;
+                    player.ship.pos.x -= player.ship.speed * delta;
                 };
                 if is_key_down(KeyCode::Down) || is_key_down(KeyCode::S) {
-                    ship.pos.y -= ship.speed * delta;
+                    player.ship.pos.y -= player.ship.speed * delta;
                 };
                 if is_key_down(KeyCode::Up) || is_key_down(KeyCode::W) {
-                    ship.pos.y += ship.speed * delta;
+                    player.ship.pos.y += player.ship.speed * delta;
                 };
                 if is_key_pressed(KeyCode::LeftShift) || is_key_released(KeyCode::LeftShift) {
-                    if ship.hyper_drive {
-                        ship.hyper_drive = false;
-                        ship.speed = 300.0;
-                    } else {
-                        ship.hyper_drive = true;
-                        ship.speed = 1000.0;
-                    }
+                    player.ship.togle_hyperdrive();
                 }
-                let ship_chunk = world_to_chunk(ship.pos.x, ship.pos.y);
+                let ship_chunk = world_to_chunk(player.ship.pos.x, player.ship.pos.y);
                 world.stream_around(ship_chunk, LOAD_RADIUS);
                 // Background Stars Rendering
                 for layer in &layers {
-                    layer.draw(ship.pos.x, ship.pos.y);
+                    layer.draw(player.ship.pos.x, player.ship.pos.y);
                 }
 
                 // --- WORLD SPACE: activate the follow-camera, then draw world things ---
                 let cam = Camera2D::from_display_rect(Rect::new(
-                    ship.pos.x - screen_width() / 2.0,
-                    ship.pos.y - screen_height() / 2.0,
+                    player.ship.pos.x - screen_width() / 2.0,
+                    player.ship.pos.y - screen_height() / 2.0,
                     screen_width(),
                     screen_height(),
                 ));
                 set_camera(&cam);
                 let mouse_world = cam.screen_to_world(mouse_position().into());
 
-                draw_world(&world, &ship);
+                draw_world(&world, &player);
 
                 //Player Drawing
-                ship.draw();
+                player.ship.draw();
 
-                let target = nearest_dungeon(&world, &ship);
+                let target = nearest_dungeon(&world, &player);
                 if let Some(d) = target {
                     draw_circle_lines(d.x, d.y, d.radius + 5.0, 3.0, YELLOW);
                 }
@@ -291,39 +275,27 @@ async fn main() {
                     if is_key_pressed(KeyCode::E) {
                         next_state = Some(GameState::InCombat {
                             dungeon_id: d.id,
-                            combat: CombatInstance::new(d.id, ship.clone()),
+                            combat: CombatInstance::new(d.id, player.ship.clone()),
                         });
                     }
                 }
-                draw_text(
-                    &format!(
-                        "Mouse position: ({:.0}, {:.0})",
-                        mouse_world.x, mouse_world.y
-                    ),
-                    10.0,
-                    60.0,
-                    28.0,
+                draw_bottom_left(
+                    &[
+                        &format!(
+                            "Mouse position: ({:.0}, {:.0})",
+                            mouse_world.x, mouse_world.y
+                        ),
+                        &format!(
+                            "chunk {:?}   loaded chunks: {}",
+                            ship_chunk,
+                            world.loaded.len()
+                        ),
+                    ],
+                    20,
                     WHITE,
                 );
 
-                draw_text(
-                    &format!(
-                        "chunk {:?}   loaded chunks: {}",
-                        ship_chunk,
-                        world.loaded.len()
-                    ),
-                    10.0,
-                    30.0,
-                    26.0,
-                    WHITE,
-                );
-                draw_text(
-                    &format!("HyperDrive: {:?}", ship.hyper_drive),
-                    400.0,
-                    30.0,
-                    16.0,
-                    WHITE,
-                );
+                player.draw_player_stats();
             }
             GameState::InCombat { dungeon_id, combat } => {
                 combat.update(delta);
@@ -342,7 +314,10 @@ async fn main() {
                     draw_centered("Press SPACE to return to space", 360.0, 26, GRAY);
 
                     if is_key_pressed(KeyCode::Space) {
-                        // (ch08 will grant rewards here, using *dungeon_id* and the outcome)
+                        if let CombatOutcome::Win { score } = outcome {
+                            player.credits += score;
+                            player.clear_dungeon(*dungeon_id);
+                        }
                         let _ = dungeon_id;
                         next_state = Some(GameState::Exploring);
                     }
@@ -365,9 +340,4 @@ fn object_color(kind: ObjectKind) -> Color {
         ObjectKind::Station => SKYBLUE,
         ObjectKind::Dungeon => RED,
     }
-}
-
-fn draw_centered(text: &str, y: f32, font_size: u16, color: Color) {
-    let d = measure_text(text, None, font_size, 1.0);
-    draw_text(text, screen_width() / 2.0 - d.width / 2.0, y, font_size as f32, color);
 }
