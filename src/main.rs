@@ -5,19 +5,29 @@ mod seed;
 use crate::{
     chunk::{Chunk, ObjectKind, SpaceObject, generate_chunk},
     common::StarLayer,
-    seed::{World, hash_seed_string},
+    seed::{SeedRng, World, hash_seed_string},
 };
 use macroquad::prelude::*;
 
+#[derive(Clone)]
 struct PlayerShip {
     pos: Vec2,
     speed: f32,
     hyper_drive: bool,
 }
 
+impl PlayerShip {
+    fn draw(&self) {
+        draw_circle(self.pos.x, self.pos.y, 16.0, YELLOW);
+    }
+}
+
 enum GameState {
     Exploring,
-    InCombat { dungeon_id: u64 },
+    InCombat {
+        dungeon_id: u64,
+        combat: CombatInstance,
+    },
 }
 
 // Chunk Stuff
@@ -26,6 +36,9 @@ const WORLD_SEED_STRING: &str = "hello";
 const LOAD_RADIUS: i32 = 2;
 const CHUNK_DEBUG: bool = true;
 const INTERACT_RANGE: f32 = 70.0;
+const ARENA_WIDTH: f32 = 800.0;
+const ARENA_HEIGHT: f32 = 600.0;
+const COMBAT_DURATION: f32 = 20.0;
 
 fn world_to_chunk(world_x: f32, world_y: f32) -> (i32, i32) {
     let cx = (world_x / CHUNK_SIZE).floor() as i32;
@@ -100,6 +113,88 @@ fn nearest_dungeon(world: &World, ship: &PlayerShip) -> Option<SpaceObject> {
     best
 }
 
+enum CombatOutcome {
+    Win { score: u32 },
+    Lost,
+}
+
+struct CombatInstance {
+    player: PlayerShip,
+    score: u32,
+    spawn_timer: f32,
+    spawn_interval: f32,
+    time_left: f32,
+    rng: SeedRng, // seeded from the dungeon id → reproducible waves
+    outcome: Option<CombatOutcome>,
+}
+
+impl CombatInstance {
+    fn new(dungeon_id: u64, player: PlayerShip) -> CombatInstance {
+        let mut rng = SeedRng::new(dungeon_id);
+        let spawn_interval = rng.range_f32(0.35, 0.65);
+        CombatInstance {
+            player: player,
+            score: 0,
+            spawn_timer: 0.0,
+            spawn_interval,
+            time_left: COMBAT_DURATION,
+            rng,
+            outcome: None,
+        }
+    }
+
+    fn update(&mut self, delta: f32) {
+        self.time_left -= delta;
+        if self.time_left <= 0.0 {
+            self.outcome = Some(CombatOutcome::Win { score: 20 });
+            return;
+        }
+        if is_key_pressed(KeyCode::Q) {
+            self.outcome = Some(CombatOutcome::Win { score: 20 });
+        }
+        if is_key_pressed(KeyCode::L) {
+            self.outcome = Some(CombatOutcome::Lost);
+        }
+    }
+    fn draw(&self) {
+        // arena camera: map the fixed arena rect onto the whole window
+        set_camera(&Camera2D::from_display_rect(Rect::new(
+            0.0,
+            0.0,
+            ARENA_WIDTH,
+            ARENA_HEIGHT,
+        )));
+        draw_rectangle_lines(0.0, 0.0, ARENA_WIDTH, ARENA_HEIGHT, 4.0, DARKGRAY);
+        self.player.draw();
+        set_default_camera();
+        draw_text("IN DUNGEON (placeholder)", 40.0, 200.0, 50.0, YELLOW);
+        draw_text(
+            &format!("dungeon id: {}", self.rng.state),
+            40.0,
+            250.0,
+            26.0,
+            WHITE,
+        );
+        draw_text(
+            "Q = win and leave    L = die and leave",
+            40.0,
+            300.0,
+            26.0,
+            GRAY,
+        );
+        // HUD in screen space
+        
+        draw_text(&format!("Score: {}", self.score), 12.0, 32.0, 30.0, WHITE);
+        draw_text(
+            &format!("Survive: {:.1}s", self.time_left.max(0.0)),
+            12.0,
+            62.0,
+            28.0,
+            GOLD,
+        );
+    }
+}
+
 #[macroquad::main("Space Explorer")]
 async fn main() {
     // Initialize
@@ -129,31 +224,30 @@ async fn main() {
         let mut next_state: Option<GameState> = None;
         let delta = get_frame_time();
 
-        // Player Movement
-        if is_key_down(KeyCode::Right) || is_key_down(KeyCode::D) {
-            ship.pos.x += ship.speed * delta;
-        };
-        if is_key_down(KeyCode::Left) || is_key_down(KeyCode::A) {
-            ship.pos.x -= ship.speed * delta;
-        };
-        if is_key_down(KeyCode::Down) || is_key_down(KeyCode::S) {
-            ship.pos.y -= ship.speed * delta;
-        };
-        if is_key_down(KeyCode::Up) || is_key_down(KeyCode::W) {
-            ship.pos.y += ship.speed * delta;
-        };
-        if is_key_pressed(KeyCode::LeftShift) || is_key_released(KeyCode::LeftShift) {
-            if ship.hyper_drive {
-                ship.hyper_drive = false;
-                ship.speed = 300.0;
-            } else {
-                ship.hyper_drive = true;
-                ship.speed = 1000.0;
-            }
-        }
-
-        match &game_state {
+        match &mut game_state {
             GameState::Exploring => {
+                // Player Movement
+                if is_key_down(KeyCode::Right) || is_key_down(KeyCode::D) {
+                    ship.pos.x += ship.speed * delta;
+                };
+                if is_key_down(KeyCode::Left) || is_key_down(KeyCode::A) {
+                    ship.pos.x -= ship.speed * delta;
+                };
+                if is_key_down(KeyCode::Down) || is_key_down(KeyCode::S) {
+                    ship.pos.y -= ship.speed * delta;
+                };
+                if is_key_down(KeyCode::Up) || is_key_down(KeyCode::W) {
+                    ship.pos.y += ship.speed * delta;
+                };
+                if is_key_pressed(KeyCode::LeftShift) || is_key_released(KeyCode::LeftShift) {
+                    if ship.hyper_drive {
+                        ship.hyper_drive = false;
+                        ship.speed = 300.0;
+                    } else {
+                        ship.hyper_drive = true;
+                        ship.speed = 1000.0;
+                    }
+                }
                 let ship_chunk = world_to_chunk(ship.pos.x, ship.pos.y);
                 world.stream_around(ship_chunk, LOAD_RADIUS);
                 // Background Stars Rendering
@@ -174,7 +268,7 @@ async fn main() {
                 draw_world(&world, &ship);
 
                 //Player Drawing
-                draw_circle(ship.pos.x, ship.pos.y, 16.0, YELLOW);
+                ship.draw();
 
                 let target = nearest_dungeon(&world, &ship);
                 if let Some(d) = target {
@@ -195,7 +289,10 @@ async fn main() {
                         RED,
                     );
                     if is_key_pressed(KeyCode::E) {
-                        next_state = Some(GameState::InCombat { dungeon_id: d.id });
+                        next_state = Some(GameState::InCombat {
+                            dungeon_id: d.id,
+                            combat: CombatInstance::new(d.id, ship.clone()),
+                        });
                     }
                 }
                 draw_text(
@@ -228,24 +325,27 @@ async fn main() {
                     WHITE,
                 );
             }
-            GameState::InCombat { dungeon_id } => {
-                draw_text("IN DUNGEON (placeholder)", 40.0, 200.0, 50.0, YELLOW);
-                draw_text(
-                    &format!("dungeon id: {dungeon_id}"),
-                    40.0,
-                    250.0,
-                    26.0,
-                    WHITE,
-                );
-                draw_text(
-                    "Q = win and leave    L = die and leave",
-                    40.0,
-                    300.0,
-                    26.0,
-                    GRAY,
-                );
-                if is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::L) {
-                    next_state = Some(GameState::Exploring);
+            GameState::InCombat { dungeon_id, combat } => {
+                combat.update(delta);
+                combat.draw();
+                if let Some(outcome) = &combat.outcome {
+                    set_default_camera();
+                    match outcome {
+                        CombatOutcome::Win { score } => {
+                            draw_centered("DUNGEON CLEARED", 240.0, 56, GREEN);
+                            draw_centered(&format!("+{score} score"), 300.0, 34, WHITE);
+                        }
+                        CombatOutcome::Lost => {
+                            draw_centered("YOU DIED", 240.0, 56, RED);
+                        }
+                    }
+                    draw_centered("Press SPACE to return to space", 360.0, 26, GRAY);
+
+                    if is_key_pressed(KeyCode::Space) {
+                        // (ch08 will grant rewards here, using *dungeon_id* and the outcome)
+                        let _ = dungeon_id;
+                        next_state = Some(GameState::Exploring);
+                    }
                 }
             }
         }
@@ -253,27 +353,6 @@ async fn main() {
         if let Some(state) = next_state.take() {
             game_state = state;
         }
-
-        // Chunks — borders in WORLD space (shapes ignore the camera's flipped Y)
-        // let ((min_cx, min_cy), (max_cx, max_cy)) = visible_chunk_range(ship.pos.x, ship.pos.y);
-        // let (ship_cx, ship_cy) = world_to_chunk(ship.pos.x, ship.pos.y);
-        // for cy in min_cy..=max_cy {
-        //     for cx in min_cx..=max_cx {
-        //         let chunk = generate_chunk(world_seed, cx, cy);
-        //         for obj in &chunk.objects {
-        //             draw_circle(obj.x, obj.y, obj.radius, object_color(obj.kind));
-        //         }
-        //         // Debug Chunk Lines
-        //         let wx = cx as f32 * CHUNK_SIZE;
-        //         let wy = cy as f32 * CHUNK_SIZE;
-        //         let color = if (cx, cy) == (ship_cx, ship_cy) {
-        //             GREEN
-        //         } else {
-        //             DARKGREEN
-        //         };
-        //         draw_rectangle_lines(wx, wy, CHUNK_SIZE, CHUNK_SIZE, 2.0, color);
-        //     }
-        // }
 
         next_frame().await;
     }
@@ -286,4 +365,9 @@ fn object_color(kind: ObjectKind) -> Color {
         ObjectKind::Station => SKYBLUE,
         ObjectKind::Dungeon => RED,
     }
+}
+
+fn draw_centered(text: &str, y: f32, font_size: u16, color: Color) {
+    let d = measure_text(text, None, font_size, 1.0);
+    draw_text(text, screen_width() / 2.0 - d.width / 2.0, y, font_size as f32, color);
 }
