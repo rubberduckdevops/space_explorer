@@ -26,8 +26,8 @@ enum GameState {
 // Chunk Stuff
 const CHUNK_SIZE: f32 = 512.0;
 const WORLD_SEED_STRING: &str = "hello";
-const LOAD_RADIUS: i32 = 2;
-const CHUNK_DEBUG: bool = true;
+const LOAD_RADIUS: i32 = 10;
+const CHUNK_DEBUG: bool = false;
 const INTERACT_RANGE: f32 = 70.0;
 const ARENA_WIDTH: f32 = 800.0;
 const ARENA_HEIGHT: f32 = 600.0;
@@ -42,21 +42,6 @@ fn chunk_to_world(cx: i32, cy: i32) -> (f32, f32) {
     (cx as f32 * CHUNK_SIZE, cy as f32 * CHUNK_SIZE)
 }
 
-fn world_to_local(world_x: f32, world_y: f32) -> (f32, f32) {
-    (
-        world_x.rem_euclid(CHUNK_SIZE),
-        world_y.rem_euclid(CHUNK_SIZE),
-    )
-}
-
-fn visible_chunk_range(ship_x: f32, ship_y: f32) -> ((i32, i32), (i32, i32)) {
-    let half_w = screen_width() / 2.0;
-    let half_h = screen_height() / 2.0;
-    let min = world_to_chunk(ship_x - half_w, ship_y - half_h); // top-left
-    let max = world_to_chunk(ship_x + half_w, ship_y + half_h); // bottom-right
-
-    (min, max)
-}
 
 fn draw_world(world: &World, ship: &Player) {
     let half_w = screen_width() / 2.0;
@@ -329,9 +314,10 @@ async fn main() {
                             mouse_world.x, mouse_world.y
                         ),
                         &format!(
-                            "chunk {:?}   loaded chunks: {}",
+                            "chunk {:?} loaded chunks: {} pending {}",
                             ship_chunk,
-                            world.loaded.len()
+                            world.loaded.len(),
+                            world.pending.len(),
                         ),
                     ],
                     20,
