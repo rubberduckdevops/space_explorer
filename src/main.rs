@@ -2,17 +2,20 @@ mod common;
 mod seed;
 mod chunk;
 
-use crate::{common::StarLayer, seed::hash_seed_string, chunk::{generate_chunk, ObjectKind}};
+use crate::{common::StarLayer, seed::{hash_seed_string,World}, chunk::{generate_chunk,Chunk, ObjectKind}};
 use macroquad::prelude::*;
 
 struct PlayerShip {
     pos: Vec2,
     speed: f32,
+    hyper_drive: bool,
 }
 
 // Chunk Stuff
 const CHUNK_SIZE: f32 = 512.0;
 const WORLD_SEED_STRING: &str = "hello";
+const LOAD_RADIUS: i32 = 2;
+const CHUNK_DEBUG: bool = true;
 
 fn world_to_chunk(world_x: f32, world_y: f32) -> (i32, i32) {
     let cx = (world_x / CHUNK_SIZE).floor() as i32;
@@ -39,6 +42,26 @@ fn visible_chunk_range(ship_x: f32, ship_y: f32) -> ((i32, i32), (i32, i32)) {
     (min, max)
 }
 
+fn draw_world(world: &World, ship: &PlayerShip) {
+    let half_w = screen_width() / 2.0;
+    let half_h = screen_height() / 2.0;
+    let (min_cx, min_cy) = world_to_chunk(ship.pos.x - half_w, ship.pos.y - half_h);
+    let (max_cx, max_cy) = world_to_chunk(ship.pos.x + half_w, ship.pos.y + half_h);
+    for cy in min_cy..=max_cy {
+        for cx in min_cx..=max_cx {
+            if CHUNK_DEBUG {
+                let world_chunk = chunk_to_world(cx, cy);
+                draw_rectangle_lines(world_chunk.0, world_chunk.1, CHUNK_SIZE, CHUNK_SIZE, 2.0, GREEN);
+            }
+            if let Some(chunk) = world.loaded.get(&(cx,cy)) {
+                for obj in &chunk.objects {
+                    draw_circle(obj.x, obj.y, obj.radius, object_color(obj.kind));
+                }
+            }
+        }
+    }
+}
+
 #[macroquad::main("Space Explorer")]
 async fn main() {
     // Initialize
@@ -46,10 +69,12 @@ async fn main() {
     log::info!("World Seed String: {}", WORLD_SEED_STRING);
     let world_seed = hash_seed_string(WORLD_SEED_STRING);
     log::info!("World Seed Hash: {}", &world_seed);
+    let mut world = World::new(world_seed);
 
     let mut ship = PlayerShip {
         pos: vec2(0.0, 0.0),
         speed: 300.0,
+        hyper_drive: false
     };
 
     let layers = [
@@ -77,7 +102,19 @@ async fn main() {
         if is_key_down(KeyCode::Up) || is_key_down(KeyCode::W) {
             ship.pos.y += ship.speed * delta;
         };
+        if is_key_pressed(KeyCode::LeftShift) || is_key_released(KeyCode::LeftShift) {
+            if ship.hyper_drive {
+                ship.hyper_drive = false;
+                ship.speed = 300.0;
 
+            } else {
+                ship.hyper_drive = true;
+                ship.speed = 1000.0;
+            }
+        }
+
+        let ship_chunk = world_to_chunk(ship.pos.x, ship.pos.y);
+        world.stream_around(ship_chunk, LOAD_RADIUS);
         // Background Stars Rendering
         for layer in &layers {
             layer.draw(ship.pos.x, ship.pos.y);
@@ -99,48 +136,31 @@ async fn main() {
 
 
         // Chunks — borders in WORLD space (shapes ignore the camera's flipped Y)
-        let ((min_cx, min_cy), (max_cx, max_cy)) = visible_chunk_range(ship.pos.x, ship.pos.y);
-        let (ship_cx, ship_cy) = world_to_chunk(ship.pos.x, ship.pos.y);
-        for cy in min_cy..=max_cy {
-            for cx in min_cx..=max_cx {
-                let chunk = generate_chunk(world_seed, cx, cy);
-                for obj in &chunk.objects {
-                    draw_circle(obj.x, obj.y, obj.radius, object_color(obj.kind));
-                }
-                // Debug Chunk Lines
-                let wx = cx as f32 * CHUNK_SIZE;
-                let wy = cy as f32 * CHUNK_SIZE;
-                let color = if (cx, cy) == (ship_cx, ship_cy) {
-                    GREEN
-                } else {
-                    DARKGREEN
-                };
-                draw_rectangle_lines(wx, wy, CHUNK_SIZE, CHUNK_SIZE, 2.0, color);
-            }
-        }
+        // let ((min_cx, min_cy), (max_cx, max_cy)) = visible_chunk_range(ship.pos.x, ship.pos.y);
+        // let (ship_cx, ship_cy) = world_to_chunk(ship.pos.x, ship.pos.y);
+        // for cy in min_cy..=max_cy {
+        //     for cx in min_cx..=max_cx {
+        //         let chunk = generate_chunk(world_seed, cx, cy);
+        //         for obj in &chunk.objects {
+        //             draw_circle(obj.x, obj.y, obj.radius, object_color(obj.kind));
+        //         }
+        //         // Debug Chunk Lines
+        //         let wx = cx as f32 * CHUNK_SIZE;
+        //         let wy = cy as f32 * CHUNK_SIZE;
+        //         let color = if (cx, cy) == (ship_cx, ship_cy) {
+        //             GREEN
+        //         } else {
+        //             DARKGREEN
+        //         };
+        //         draw_rectangle_lines(wx, wy, CHUNK_SIZE, CHUNK_SIZE, 2.0, color);
+        //     }
+        // }
+        draw_world(&world, &ship);
 
         //Player Drawing
-
         draw_circle(ship.pos.x, ship.pos.y, 16.0, YELLOW);
 
         set_default_camera();
-
-        // Chunk labels — drawn in SCREEN space so the world camera's flipped Y
-        // doesn't render the text upside-down. Convert each chunk corner to screen.
-        for cy in min_cy..=max_cy {
-            for cx in min_cx..=max_cx {
-                let wx = cx as f32 * CHUNK_SIZE;
-                let wy = cy as f32 * CHUNK_SIZE;
-                // project the chunk's world corner into screen pixels (1:1 zoom here)
-                let corner = cam.world_to_screen(vec2(wx, wy));
-                let color = if (cx, cy) == (ship_cx, ship_cy) {
-                    GREEN
-                } else {
-                    DARKGREEN
-                };
-                draw_text(&format!("({},{})", cx, cy), corner.x + 12.0, corner.y + 34.0, 26.0, color);
-            }
-        }
 
         draw_text(
             &format!(
@@ -154,9 +174,10 @@ async fn main() {
         );
 
         draw_text(
-            &format!("world ({:.0}, {:.0})   chunk ({}, {})", ship.pos.x, ship.pos.y, ship_cx, ship_cy),
+            &format!("chunk {:?}   loaded chunks: {}", ship_chunk, world.loaded.len()),
             10.0, 30.0, 26.0, WHITE,
         );
+        draw_text(&format!("HyperDrive: {:?}", ship.hyper_drive),10.0, 90.0, 16.0, WHITE);
         next_frame().await;
     }
 }

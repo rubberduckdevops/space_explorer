@@ -1,3 +1,6 @@
+use crate::chunk::{Chunk, generate_chunk};
+use std::{collections::HashMap, hash::Hash};
+
 /// splitmix64 finalizer — scrambles a u64 thoroughly.
 pub fn mix(mut x: u64) -> u64 {
     x = (x ^ (x >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
@@ -50,4 +53,38 @@ pub fn chunk_seed(world_seed: u64, cx: i32, cy: i32) -> u64 {
     let b = (cx as u64).wrapping_mul(0x9E3779B97F4A7C15);
     let c = (cy as u64).wrapping_mul(0xC2B2AE3D27D4EB4F);
     mix(a ^ b ^ c)
+}
+
+pub struct World {
+    pub seed: u64, 
+    pub loaded: HashMap<(i32, i32), Chunk>,
+}
+
+impl World {
+    pub fn new(seed: u64) -> World {
+        log::info!("Generating World");
+        World {
+            seed, 
+            loaded: HashMap::new()
+        }
+    }
+
+    pub fn ensure_chunk(&mut self, cx: i32, cy: i32) {
+        let seed = self.seed;
+        self.loaded.entry((cx,cy)).or_insert_with(|| generate_chunk(seed, cx, cy));
+    }
+    pub fn stream_around(&mut self, center: (i32,i32), radius: i32) {
+        // Load Chunks in the Radius of Player
+        for cy in (center.1 - radius)..=(center.1 + radius) {
+            for cx in (center.0 - radius)..=(center.0 + radius) {
+                self.ensure_chunk(cx, cy);
+            }
+        }
+        // Unload Chunks that drifted away from Player
+        let keep = radius + 1;
+        self.loaded.retain(|&(cx,cy), _| {
+            (cx - center.0).abs() <= keep && (cy - center.1).abs() <= keep
+        });
+    }
+
 }
