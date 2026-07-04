@@ -90,8 +90,7 @@ pub mod save {
     use serde::{Deserialize, Serialize};
 
     use crate::{
-        player::{self, Player},
-        seed,
+        player::{Player}
     };
     const SAVE_PATH: &str = "explorer_save.json";
 

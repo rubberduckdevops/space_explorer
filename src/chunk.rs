@@ -1,6 +1,6 @@
 use crate::{CHUNK_SIZE, NEBULA_SCALE};
-use std::{collections::HashMap, hash::Hash};
-
+use std::{collections::{HashMap, HashSet}};
+use std::sync::mpsc::{channel, Receiver, Sender};
 #[derive(Clone, Copy, PartialEq)]
 pub enum ObjectKind {
     Asteroid,
@@ -126,17 +126,39 @@ pub fn chunk_seed(world_seed: u64, cx: i32, cy: i32) -> u64 {
     mix(a ^ b ^ c)
 }
 
+fn spawn_generator(seed:u64) -> (Sender<(i32,i32)>, Receiver<Chunk>) {
+    let (req_tx, req_rx) = channel::<(i32, i32)>();
+    let (res_tx, res_rx) = channel::<Chunk>();
+    std::thread::spawn(move || {
+        while let Ok((cx, cy)) = req_rx.recv() {
+            let chunk = generate_chunk(seed, cx, cy);
+            if res_tx.send(chunk).is_err() {
+                break; // main side hung up
+            }
+        }
+    });
+
+    (req_tx, res_rx)
+}
 pub struct World {
     pub seed: u64,
     pub loaded: HashMap<(i32, i32), Chunk>,
+    pub pending: HashSet<(i32, i32)> ,
+    pub req_tx: Sender<(i32, i32)>,
+    pub res_rx: Receiver<Chunk>
 }
 
 impl World {
     pub fn new(seed: u64) -> World {
         log::info!("Generating World");
+        let (req_tx, res_rx) = spawn_generator(seed);
+
         World {
             seed,
             loaded: HashMap::new(),
+            pending: HashSet::new(), 
+            req_tx, 
+            res_rx
         }
     }
 
@@ -147,16 +169,28 @@ impl World {
             .or_insert_with(|| generate_chunk(seed, cx, cy));
     }
     pub fn stream_around(&mut self, center: (i32, i32), radius: i32) {
-        // Load Chunks in the Radius of Player
+        // 1. Request any chunk in range that's neither loaded nor already pending
         for cy in (center.1 - radius)..=(center.1 + radius) {
             for cx in (center.0 - radius)..=(center.0 + radius) {
-                self.ensure_chunk(cx, cy);
+                let key = (cx, cy);
+                if !self.loaded.contains_key(&key) && !self.pending.contains(&key){
+                    self.pending.insert(key);
+                    let _ = self.req_tx.send(key);
+                }
             }
         }
-        // Unload Chunks that drifted away from Player
+        // 2. Collect whatever the worker has finished (non-blocking)
+        while let Ok(chunk) = self.res_rx.try_recv() {
+            self.pending.remove(&chunk.coord);
+            self.loaded.insert(chunk.coord, chunk);
+        }
+        // 3. Unload distant chunks ( and forget distant pending requests)
         let keep = radius + 1;
         self.loaded
             .retain(|&(cx, cy), _| (cx - center.0).abs() <= keep && (cy - center.1).abs() <= keep);
+        self.pending.retain(|&(cx,cy)| {
+            (cx - center.0).abs() <= keep && (cy - center.1).abs() <= keep
+        });
     }
 }
 
