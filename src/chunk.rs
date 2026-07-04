@@ -1,6 +1,14 @@
-use crate::{CHUNK_SIZE, NEBULA_SCALE};
-use std::{collections::{HashMap, HashSet}};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use crate::player::Player;
+use macroquad::prelude::*;
+use std::collections::{HashMap, HashSet};
+use std::sync::mpsc::{Receiver, Sender, channel};
+
+// World / chunk tuning
+pub const CHUNK_SIZE: f32 = 512.0;
+pub const NEBULA_SCALE: f32 = 1400.0;
+pub const LOAD_RADIUS: i32 = 10;
+pub const CHUNK_DEBUG: bool = false;
+pub const INTERACT_RANGE: f32 = 70.0;
 #[derive(Clone, Copy, PartialEq)]
 pub enum ObjectKind {
     Asteroid,
@@ -126,14 +134,14 @@ pub fn chunk_seed(world_seed: u64, cx: i32, cy: i32) -> u64 {
     mix(a ^ b ^ c)
 }
 
-fn spawn_generator(seed:u64) -> (Sender<(i32,i32)>, Receiver<Chunk>) {
+fn spawn_generator(seed: u64) -> (Sender<(i32, i32)>, Receiver<Chunk>) {
     let (req_tx, req_rx) = channel::<(i32, i32)>();
     let (res_tx, res_rx) = channel::<Chunk>();
     std::thread::spawn(move || {
         while let Ok((cx, cy)) = req_rx.recv() {
             log::debug!("Generating Chunk: {},{}", &cx, &cy);
             let chunk = generate_chunk(seed, cx, cy);
-            
+
             if res_tx.send(chunk).is_err() {
                 break; // main side hung up
             }
@@ -143,11 +151,12 @@ fn spawn_generator(seed:u64) -> (Sender<(i32,i32)>, Receiver<Chunk>) {
     (req_tx, res_rx)
 }
 pub struct World {
+    #[allow(dead_code)]
     pub seed: u64,
     pub loaded: HashMap<(i32, i32), Chunk>,
-    pub pending: HashSet<(i32, i32)> ,
+    pub pending: HashSet<(i32, i32)>,
     pub req_tx: Sender<(i32, i32)>,
-    pub res_rx: Receiver<Chunk>
+    pub res_rx: Receiver<Chunk>,
 }
 
 impl World {
@@ -158,12 +167,13 @@ impl World {
         World {
             seed,
             loaded: HashMap::new(),
-            pending: HashSet::new(), 
-            req_tx, 
-            res_rx
+            pending: HashSet::new(),
+            req_tx,
+            res_rx,
         }
     }
 
+    #[allow(dead_code)]
     pub fn ensure_chunk(&mut self, cx: i32, cy: i32) {
         let seed = self.seed;
         self.loaded
@@ -175,7 +185,7 @@ impl World {
         for cy in (center.1 - radius)..=(center.1 + radius) {
             for cx in (center.0 - radius)..=(center.0 + radius) {
                 let key = (cx, cy);
-                if !self.loaded.contains_key(&key) && !self.pending.contains(&key){
+                if !self.loaded.contains_key(&key) && !self.pending.contains(&key) {
                     self.pending.insert(key);
                     let _ = self.req_tx.send(key);
                 }
@@ -190,9 +200,8 @@ impl World {
         let keep = radius + 1;
         self.loaded
             .retain(|&(cx, cy), _| (cx - center.0).abs() <= keep && (cy - center.1).abs() <= keep);
-        self.pending.retain(|&(cx,cy)| {
-            (cx - center.0).abs() <= keep && (cy - center.1).abs() <= keep
-        });
+        self.pending
+            .retain(|&(cx, cy)| (cx - center.0).abs() <= keep && (cy - center.1).abs() <= keep);
     }
 }
 
@@ -226,4 +235,100 @@ pub fn value_noise(seed: u64, x: f32, y: f32) -> f32 {
     let top = lerp(v00, v10, tx);
     let bottom = lerp(v01, v11, tx);
     lerp(top, bottom, ty)
+}
+
+pub fn world_to_chunk(world_x: f32, world_y: f32) -> (i32, i32) {
+    let cx = (world_x / CHUNK_SIZE).floor() as i32;
+    let cy = (world_y / CHUNK_SIZE).floor() as i32;
+    (cx, cy)
+}
+
+pub fn chunk_to_world(cx: i32, cy: i32) -> (f32, f32) {
+    (cx as f32 * CHUNK_SIZE, cy as f32 * CHUNK_SIZE)
+}
+
+fn object_color(kind: ObjectKind) -> Color {
+    match kind {
+        ObjectKind::Asteroid => GRAY,
+        ObjectKind::Station => SKYBLUE,
+        ObjectKind::Dungeon => RED,
+    }
+}
+
+pub fn draw_world(world: &World, ship: &Player) {
+    let half_w = screen_width() / 2.0;
+    let half_h = screen_height() / 2.0;
+    let (min_cx, min_cy) = world_to_chunk(ship.ship.pos.x - half_w, ship.ship.pos.y - half_h);
+    let (max_cx, max_cy) = world_to_chunk(ship.ship.pos.x + half_w, ship.ship.pos.y + half_h);
+    for cy in min_cy..=max_cy {
+        for cx in min_cx..=max_cx {
+            if CHUNK_DEBUG {
+                let world_chunk = chunk_to_world(cx, cy);
+                draw_rectangle_lines(
+                    world_chunk.0,
+                    world_chunk.1,
+                    CHUNK_SIZE,
+                    CHUNK_SIZE,
+                    2.0,
+                    GREEN,
+                );
+            }
+            if let Some(chunk) = world.loaded.get(&(cx, cy)) {
+                for obj in &chunk.objects {
+                    let color =
+                        if obj.kind == ObjectKind::Dungeon && ship.is_dungeon_cleared(&obj.id) {
+                            DARKGRAY
+                        } else {
+                            object_color(obj.kind)
+                        };
+                    draw_circle(obj.x, obj.y, obj.radius, color);
+                }
+            }
+        }
+    }
+}
+
+pub fn draw_nebula(world: &World, player: &Player, seed: u64) {
+    let _ = world;
+    let half_w = screen_width() / 2.0;
+    let half_h = screen_height() / 2.0;
+    let (min_cx, min_cy) = world_to_chunk(player.ship.pos.x - half_w, player.ship.pos.y - half_h);
+    let (max_cx, max_cy) = world_to_chunk(player.ship.pos.x + half_w, player.ship.pos.y + half_h);
+
+    for cy in min_cy..=max_cy {
+        for cx in min_cx..=max_cx {
+            let wx = cx as f32 * CHUNK_SIZE;
+            let wy = cy as f32 * CHUNK_SIZE;
+
+            let n = value_noise(
+                seed,
+                (wx + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
+                (wy + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
+            );
+            let intensity = (n - 0.4).max(0.0) * 0.5;
+            let color = Color::new(0.4, 0.1, 0.6, intensity);
+            draw_rectangle(wx, wy, CHUNK_SIZE, CHUNK_SIZE, color);
+        }
+    }
+}
+
+pub fn nearest_dungeon(world: &World, player: &Player) -> Option<SpaceObject> {
+    let mut best: Option<SpaceObject> = None;
+    let mut best_dist = INTERACT_RANGE;
+
+    for chunk in world.loaded.values() {
+        for obj in &chunk.objects {
+            if obj.kind != ObjectKind::Dungeon || player.is_dungeon_cleared(&obj.id) {
+                continue;
+            }
+            let dx = obj.x - player.ship.pos.x;
+            let dy = obj.y - player.ship.pos.y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < best_dist {
+                best_dist = dist;
+                best = Some(*obj);
+            }
+        }
+    }
+    best
 }

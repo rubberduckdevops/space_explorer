@@ -1,17 +1,19 @@
 mod chunk;
+mod combat;
 mod common;
 mod player;
 
 use crate::{
     chunk::{
-        Chunk, ObjectKind, SeedRng, SpaceObject, World, generate_chunk, hash_seed_string,
-        value_noise,
+        LOAD_RADIUS, World, draw_nebula, draw_world, hash_seed_string, nearest_dungeon,
+        world_to_chunk,
     },
+    combat::{CombatInstance, CombatOutcome},
     common::{
-        StarLayer, draw_bottom_left, draw_centered,
+        draw_bottom_left,draw_bottom_right, draw_centered,
         save::{load_game, save_game},
     },
-    player::{Player, PlayerShip},
+    player::Player,
 };
 use macroquad::prelude::*;
 
@@ -23,185 +25,7 @@ enum GameState {
     },
 }
 
-// Chunk Stuff
-const CHUNK_SIZE: f32 = 512.0;
 const WORLD_SEED_STRING: &str = "hello";
-const LOAD_RADIUS: i32 = 10;
-const CHUNK_DEBUG: bool = false;
-const INTERACT_RANGE: f32 = 70.0;
-const ARENA_WIDTH: f32 = 800.0;
-const ARENA_HEIGHT: f32 = 600.0;
-const COMBAT_DURATION: f32 = 20.0;
-
-fn world_to_chunk(world_x: f32, world_y: f32) -> (i32, i32) {
-    let cx = (world_x / CHUNK_SIZE).floor() as i32;
-    let cy = (world_y / CHUNK_SIZE).floor() as i32;
-    (cx, cy)
-}
-fn chunk_to_world(cx: i32, cy: i32) -> (f32, f32) {
-    (cx as f32 * CHUNK_SIZE, cy as f32 * CHUNK_SIZE)
-}
-
-
-fn draw_world(world: &World, ship: &Player) {
-    let half_w = screen_width() / 2.0;
-    let half_h = screen_height() / 2.0;
-    let (min_cx, min_cy) = world_to_chunk(ship.ship.pos.x - half_w, ship.ship.pos.y - half_h);
-    let (max_cx, max_cy) = world_to_chunk(ship.ship.pos.x + half_w, ship.ship.pos.y + half_h);
-    for cy in min_cy..=max_cy {
-        for cx in min_cx..=max_cx {
-            if CHUNK_DEBUG {
-                let world_chunk = chunk_to_world(cx, cy);
-                draw_rectangle_lines(
-                    world_chunk.0,
-                    world_chunk.1,
-                    CHUNK_SIZE,
-                    CHUNK_SIZE,
-                    2.0,
-                    GREEN,
-                );
-            }
-            if let Some(chunk) = world.loaded.get(&(cx, cy)) {
-                for obj in &chunk.objects {
-                    let color =
-                        if obj.kind == ObjectKind::Dungeon && ship.is_dungeon_cleared(&obj.id) {
-                            DARKGRAY
-                        } else {
-                            object_color(obj.kind)
-                        };
-                    draw_circle(obj.x, obj.y, obj.radius, color);
-                }
-            }
-        }
-    }
-}
-
-fn nearest_dungeon(world: &World, player: &Player) -> Option<SpaceObject> {
-    let mut best: Option<SpaceObject> = None;
-    let mut best_dist = INTERACT_RANGE;
-
-    for chunk in world.loaded.values() {
-        for obj in &chunk.objects {
-            if obj.kind != ObjectKind::Dungeon || player.is_dungeon_cleared(&obj.id) {
-                continue;
-            }
-            let dx = obj.x - player.ship.pos.x;
-            let dy = obj.y - player.ship.pos.y;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist < best_dist {
-                best_dist = dist;
-                best = Some(*obj);
-            }
-        }
-    }
-    best
-}
-
-enum CombatOutcome {
-    Win { score: u32 },
-    Lost,
-}
-
-struct CombatInstance {
-    player: PlayerShip,
-    score: u32,
-    spawn_timer: f32,
-    spawn_interval: f32,
-    time_left: f32,
-    rng: SeedRng, // seeded from the dungeon id → reproducible waves
-    outcome: Option<CombatOutcome>,
-}
-
-impl CombatInstance {
-    fn new(dungeon_id: u64, player: PlayerShip) -> CombatInstance {
-        let mut rng = SeedRng::new(dungeon_id);
-        let spawn_interval = rng.range_f32(0.35, 0.65);
-        CombatInstance {
-            player: player,
-            score: 0,
-            spawn_timer: 0.0,
-            spawn_interval,
-            time_left: COMBAT_DURATION,
-            rng,
-            outcome: None,
-        }
-    }
-
-    fn update(&mut self, delta: f32) {
-        self.time_left -= delta;
-        if self.time_left <= 0.0 {
-            self.outcome = Some(CombatOutcome::Win { score: 20 });
-            return;
-        }
-        if is_key_pressed(KeyCode::Q) {
-            self.outcome = Some(CombatOutcome::Win { score: 20 });
-        }
-        if is_key_pressed(KeyCode::L) {
-            self.outcome = Some(CombatOutcome::Lost);
-        }
-    }
-    fn draw(&self) {
-        // arena camera: map the fixed arena rect onto the whole window
-        set_camera(&Camera2D::from_display_rect(Rect::new(
-            0.0,
-            0.0,
-            ARENA_WIDTH,
-            ARENA_HEIGHT,
-        )));
-        draw_rectangle_lines(0.0, 0.0, ARENA_WIDTH, ARENA_HEIGHT, 4.0, DARKGRAY);
-        self.player.draw();
-        set_default_camera();
-        draw_text("IN DUNGEON (placeholder)", 40.0, 200.0, 50.0, YELLOW);
-        draw_text(
-            &format!("dungeon id: {}", self.rng.state),
-            40.0,
-            250.0,
-            26.0,
-            WHITE,
-        );
-        draw_text(
-            "Q = win and leave    L = die and leave",
-            40.0,
-            300.0,
-            26.0,
-            GRAY,
-        );
-        // HUD in screen space
-
-        draw_text(&format!("Score: {}", self.score), 12.0, 32.0, 30.0, WHITE);
-        draw_text(
-            &format!("Survive: {:.1}s", self.time_left.max(0.0)),
-            12.0,
-            62.0,
-            28.0,
-            GOLD,
-        );
-    }
-}
-
-const NEBULA_SCALE: f32 = 1400.0;
-fn draw_nebula(world: &World, player: &Player, seed: u64) {
-    let half_w = screen_width() / 2.0;
-    let half_h = screen_height() / 2.0;
-    let (min_cx, min_cy) = world_to_chunk(player.ship.pos.x - half_w, player.ship.pos.y - half_h);
-    let (max_cx, max_cy) = world_to_chunk(player.ship.pos.x + half_w, player.ship.pos.y + half_h);
-
-    for cy in min_cy..=max_cy {
-        for cx in min_cx..=max_cx {
-            let wx = cx as f32 * CHUNK_SIZE;
-            let wy = cy as f32 * CHUNK_SIZE;
-
-            let n = value_noise(
-                seed,
-                (wx + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
-                (wy + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
-            );
-            let intensity = (n - 0.4).max(0.0) * 0.5;
-            let color = Color::new(0.4, 0.1, 0.6, intensity);
-            draw_rectangle(wx, wy, CHUNK_SIZE, CHUNK_SIZE, color);
-        }
-    }
-}
 
 #[macroquad::main("Space Explorer")]
 async fn main() {
@@ -224,7 +48,6 @@ async fn main() {
         .as_ref()
         .map(|s| Player::load_player(s.player.clone()))
         .unwrap_or_else(|| Player::new());
-
 
     // Start Game loop here
     let mut game_state = GameState::Exploring;
@@ -272,13 +95,11 @@ async fn main() {
                 set_camera(&cam);
                 let mouse_world = cam.screen_to_world(mouse_position().into());
 
-                
                 // Draw Environment and Players
                 draw_nebula(&world, &player, world_seed);
                 draw_world(&world, &player);
                 player.ship.draw();
 
-                
                 let target = nearest_dungeon(&world, &player);
                 if let Some(d) = target {
                     draw_circle_lines(d.x, d.y, d.radius + 5.0, 3.0, YELLOW);
@@ -320,7 +141,7 @@ async fn main() {
                     20,
                     WHITE,
                 );
-
+                draw_bottom_right(&["Demo - v0.0.1"], 16, WHITE);
                 player.draw_player_stats();
             }
             GameState::InCombat { dungeon_id, combat } => {
@@ -356,14 +177,5 @@ async fn main() {
         }
 
         next_frame().await;
-    }
-}
-
-// Helpers
-fn object_color(kind: ObjectKind) -> Color {
-    match kind {
-        ObjectKind::Asteroid => GRAY,
-        ObjectKind::Station => SKYBLUE,
-        ObjectKind::Dungeon => RED,
     }
 }

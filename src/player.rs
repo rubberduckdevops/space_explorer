@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use crate::common::{draw_centered, save::PlayerSaveData};
 use macroquad::prelude::*;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug)]
 pub struct PlayerShip {
