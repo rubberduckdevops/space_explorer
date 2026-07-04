@@ -1,25 +1,27 @@
-use crate::{CHUNK_SIZE, seed::{SeedRng, chunk_seed, mix}};
-
+use crate::{
+    CHUNK_SIZE,
+    seed::{SeedRng, chunk_seed, mix},
+};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ObjectKind {
-    Asteroid, 
+    Asteroid,
     Station,
-    Dungeon
+    Dungeon,
 }
 
 #[derive(Clone, Copy)]
 pub struct SpaceObject {
-    pub id: u64, 
-    pub x: f32, 
-    pub y: f32, 
-    pub radius: f32, 
-    pub kind: ObjectKind
+    pub id: u64,
+    pub x: f32,
+    pub y: f32,
+    pub radius: f32,
+    pub kind: ObjectKind,
 }
 
 pub struct Chunk {
     pub coord: (i32, i32),
-    pub objects: Vec<SpaceObject>
+    pub objects: Vec<SpaceObject>,
 }
 
 pub fn generate_chunk(world_seed: u64, cx: i32, cy: i32) -> Chunk {
@@ -34,11 +36,11 @@ pub fn generate_chunk(world_seed: u64, cx: i32, cy: i32) -> Chunk {
 
     for i in 0..count {
         let local_x = rng.range_f32(0.0, CHUNK_SIZE);
-        let local_y= rng.range_f32(0.0, CHUNK_SIZE);
+        let local_y = rng.range_f32(0.0, CHUNK_SIZE);
         let roll = rng.next_f32();
         let kind = if roll < 0.70 {
             ObjectKind::Asteroid
-        } else if roll <0.92 {
+        } else if roll < 0.92 {
             ObjectKind::Station
         } else {
             ObjectKind::Dungeon
@@ -54,11 +56,12 @@ pub fn generate_chunk(world_seed: u64, cx: i32, cy: i32) -> Chunk {
             x: origin_x + local_x,
             y: origin_y + local_y,
             radius,
-            kind
+            kind,
         });
-
     }
 
-    Chunk {coord: (cx,cy), objects}
-
+    Chunk {
+        coord: (cx, cy),
+        objects,
+    }
 }

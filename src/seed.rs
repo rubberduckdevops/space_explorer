@@ -56,7 +56,7 @@ pub fn chunk_seed(world_seed: u64, cx: i32, cy: i32) -> u64 {
 }
 
 pub struct World {
-    pub seed: u64, 
+    pub seed: u64,
     pub loaded: HashMap<(i32, i32), Chunk>,
 }
 
@@ -64,16 +64,18 @@ impl World {
     pub fn new(seed: u64) -> World {
         log::info!("Generating World");
         World {
-            seed, 
-            loaded: HashMap::new()
+            seed,
+            loaded: HashMap::new(),
         }
     }
 
     pub fn ensure_chunk(&mut self, cx: i32, cy: i32) {
         let seed = self.seed;
-        self.loaded.entry((cx,cy)).or_insert_with(|| generate_chunk(seed, cx, cy));
+        self.loaded
+            .entry((cx, cy))
+            .or_insert_with(|| generate_chunk(seed, cx, cy));
     }
-    pub fn stream_around(&mut self, center: (i32,i32), radius: i32) {
+    pub fn stream_around(&mut self, center: (i32, i32), radius: i32) {
         // Load Chunks in the Radius of Player
         for cy in (center.1 - radius)..=(center.1 + radius) {
             for cx in (center.0 - radius)..=(center.0 + radius) {
@@ -82,9 +84,7 @@ impl World {
         }
         // Unload Chunks that drifted away from Player
         let keep = radius + 1;
-        self.loaded.retain(|&(cx,cy), _| {
-            (cx - center.0).abs() <= keep && (cy - center.1).abs() <= keep
-        });
+        self.loaded
+            .retain(|&(cx, cy), _| (cx - center.0).abs() <= keep && (cy - center.1).abs() <= keep);
     }
-
 }
