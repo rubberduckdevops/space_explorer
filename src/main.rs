@@ -1,16 +1,17 @@
 mod chunk;
 mod common;
 mod player;
-mod seed;
 
 use crate::{
-    chunk::{Chunk, ObjectKind, SpaceObject, generate_chunk},
+    chunk::{
+        Chunk, ObjectKind, SeedRng, SpaceObject, World, generate_chunk, hash_seed_string,
+        value_noise,
+    },
     common::{
         StarLayer, draw_bottom_left, draw_centered,
         save::{load_game, save_game},
     },
     player::{Player, PlayerShip},
-    seed::{SeedRng, World, hash_seed_string, value_noise},
 };
 use macroquad::prelude::*;
 
@@ -193,7 +194,6 @@ impl CombatInstance {
     }
 }
 
-
 const NEBULA_SCALE: f32 = 1400.0;
 fn draw_nebula(world: &World, player: &Player, seed: u64) {
     let half_w = screen_width() / 2.0;
@@ -201,13 +201,15 @@ fn draw_nebula(world: &World, player: &Player, seed: u64) {
     let (min_cx, min_cy) = world_to_chunk(player.ship.pos.x - half_w, player.ship.pos.y - half_h);
     let (max_cx, max_cy) = world_to_chunk(player.ship.pos.x + half_w, player.ship.pos.y + half_h);
 
-    for cy in min_cy..=max_cy{
+    for cy in min_cy..=max_cy {
         for cx in min_cx..=max_cx {
             let wx = cx as f32 * CHUNK_SIZE;
             let wy = cy as f32 * CHUNK_SIZE;
 
-            let n = value_noise(seed, (wx + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
-             (wy + CHUNK_SIZE / 2.0) / NEBULA_SCALE
+            let n = value_noise(
+                seed,
+                (wx + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
+                (wy + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
             );
             let intensity = (n - 0.4).max(0.0) * 0.5;
             let color = Color::new(0.4, 0.1, 0.6, intensity);
