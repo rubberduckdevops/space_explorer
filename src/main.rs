@@ -2,6 +2,7 @@ mod chunk;
 mod combat;
 mod common;
 mod player;
+mod ui;
 
 use crate::{
     chunk::{
@@ -10,15 +11,18 @@ use crate::{
     },
     combat::{CombatInstance, CombatOutcome},
     common::{
-        draw_bottom_left,draw_bottom_right, draw_centered,
+        draw_centered,
         save::{load_game, save_game},
     },
     player::Player,
+    ui::PauseAction,
 };
 use macroquad::prelude::*;
 
 enum GameState {
+    Start,
     Exploring,
+    Paused,
     InCombat {
         dungeon_id: u64,
         combat: CombatInstance,
@@ -49,8 +53,10 @@ async fn main() {
         .map(|s| Player::load_player(s.player.clone()))
         .unwrap_or_else(|| Player::new());
 
+    let mut username = String::new();
+    let menu_skin = ui::build_menu_skin();
     // Start Game loop here
-    let mut game_state = GameState::Exploring;
+    let mut game_state = GameState::Start;
     log::info!("Starting Primary Loop");
     loop {
         clear_background(BLACK);
@@ -58,6 +64,13 @@ async fn main() {
         let delta = get_frame_time();
 
         match &mut game_state {
+            GameState::Start => {
+                set_default_camera();
+                if let Some(ui::NameEntryAction::Confirm) = ui::name_entry(&mut username, &menu_skin)
+                {
+                    next_state = Some(GameState::Exploring);
+                }
+            }
             GameState::Exploring => {
                 // Player Movement
                 if is_key_down(KeyCode::Right) || is_key_down(KeyCode::D) {
@@ -77,6 +90,9 @@ async fn main() {
                 }
                 if is_key_pressed(KeyCode::P) {
                     save_game(&seed_string, &player);
+                }
+                if is_key_pressed(KeyCode::Escape) {
+                    next_state = Some(GameState::Paused);
                 }
                 let ship_chunk = world_to_chunk(player.ship.pos.x, player.ship.pos.y);
                 world.stream_around(ship_chunk, LOAD_RADIUS);
@@ -110,14 +126,8 @@ async fn main() {
                 // I have to put all text AFTER so it renders correctly
                 // But all assets like shapes before this
                 set_default_camera();
+                let dungeon_in_range = target.is_some();
                 if let Some(d) = target {
-                    draw_text(
-                        "● Dungeon in range — press E to enter",
-                        10.0,
-                        90.0,
-                        26.0,
-                        RED,
-                    );
                     if is_key_pressed(KeyCode::E) {
                         next_state = Some(GameState::InCombat {
                             dungeon_id: d.id,
@@ -125,24 +135,23 @@ async fn main() {
                         });
                     }
                 }
-                draw_bottom_left(
-                    &[
-                        &format!(
-                            "Mouse position: ({:.0}, {:.0})",
-                            mouse_world.x, mouse_world.y
-                        ),
-                        &format!(
-                            "chunk {:?} loaded chunks: {} pending {}",
-                            ship_chunk,
-                            world.loaded.len(),
-                            world.pending.len(),
-                        ),
-                    ],
-                    20,
-                    WHITE,
-                );
-                draw_bottom_right(&["Demo - v0.0.1"], 16, WHITE);
+                ui::exploring_hud(&world, ship_chunk, mouse_world, dungeon_in_range);
                 player.draw_player_stats();
+            }
+            GameState::Paused => {
+                set_default_camera();
+                match ui::pause_menu() {
+                    Some(PauseAction::Resume) => next_state = Some(GameState::Exploring),
+                    Some(PauseAction::Save) => {
+                        save_game(&seed_string, &player);
+                        next_state = Some(GameState::Exploring);
+                    }
+                    Some(PauseAction::Quit) => std::process::exit(0),
+                    None => {}
+                }
+                if is_key_pressed(KeyCode::Escape) {
+                    next_state = Some(GameState::Exploring);
+                }
             }
             GameState::InCombat { dungeon_id, combat } => {
                 combat.update(delta);
