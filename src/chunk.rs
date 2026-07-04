@@ -1,6 +1,5 @@
 use crate::{
-    CHUNK_SIZE,
-    seed::{SeedRng, chunk_seed, mix},
+    CHUNK_SIZE, NEBULA_SCALE, seed::{SeedRng, chunk_seed, mix, value_noise},
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -31,8 +30,17 @@ pub fn generate_chunk(world_seed: u64, cx: i32, cy: i32) -> Chunk {
     let origin_x = cx as f32 * CHUNK_SIZE;
     let origin_y = cy as f32 * CHUNK_SIZE;
 
+    let density = value_noise(world_seed,
+        (origin_x + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
+        (origin_y + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
+    );
+
+    let base = rng.range_i32(1, 4);
+    let bonus = (density * 8.0) as i32;
+    let count = base + bonus;
+
     let mut objects = Vec::new();
-    let count = rng.range_i32(2, 7);
+    
 
     for i in 0..count {
         let local_x = rng.range_f32(0.0, CHUNK_SIZE);
@@ -65,3 +73,4 @@ pub fn generate_chunk(world_seed: u64, cx: i32, cy: i32) -> Chunk {
         objects,
     }
 }
+

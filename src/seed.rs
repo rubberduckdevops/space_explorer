@@ -88,3 +88,35 @@ impl World {
             .retain(|&(cx, cy), _| (cx - center.0).abs() <= keep && (cy - center.1).abs() <= keep);
     }
 }
+
+fn lattice_value(seed: u64, ix: i32, iy: i32) -> f32 {
+    let mut rng = SeedRng::new(chunk_seed(seed, ix,iy));
+    rng.next_f32()
+}
+
+fn smoothstep(t: f32) -> f32 {
+    t * t * (3.0 - 2.0 * t)// eases 0..1, flat at both ends
+}
+
+fn lerp(a:f32, b:f32, t: f32) -> f32 {
+    a + (b -a) * t
+}
+
+pub fn value_noise(seed: u64, x:f32, y: f32) -> f32 {
+    let x0 = x.floor(); 
+    let y0 = y.floor();
+    let ix = x0 as i32; 
+    let iy = y0 as i32;
+
+    let tx = smoothstep(x - x0); 
+    let ty = smoothstep(y - y0);
+
+    let v00 = lattice_value(seed, ix, iy); 
+    let v10 = lattice_value(seed, ix +1, iy); 
+    let v01 = lattice_value(seed, ix, iy + 1);
+    let v11 = lattice_value(seed, ix + 1, iy + 1); 
+
+    let top = lerp(v00, v10, tx); 
+    let bottom = lerp(v01, v11, tx); 
+    lerp(top, bottom, ty)
+}

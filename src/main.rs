@@ -10,7 +10,7 @@ use crate::{
         save::{load_game, save_game},
     },
     player::{Player, PlayerShip},
-    seed::{SeedRng, World, hash_seed_string},
+    seed::{SeedRng, World, hash_seed_string, value_noise},
 };
 use macroquad::prelude::*;
 
@@ -193,6 +193,29 @@ impl CombatInstance {
     }
 }
 
+
+const NEBULA_SCALE: f32 = 1400.0;
+fn draw_nebula(world: &World, player: &Player, seed: u64) {
+    let half_w = screen_width() / 2.0;
+    let half_h = screen_height() / 2.0;
+    let (min_cx, min_cy) = world_to_chunk(player.ship.pos.x - half_w, player.ship.pos.y - half_h);
+    let (max_cx, max_cy) = world_to_chunk(player.ship.pos.x + half_w, player.ship.pos.y + half_h);
+
+    for cy in min_cy..=max_cy{
+        for cx in min_cx..=max_cx {
+            let wx = cx as f32 * CHUNK_SIZE;
+            let wy = cy as f32 * CHUNK_SIZE;
+
+            let n = value_noise(seed, (wx + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
+             (wy + CHUNK_SIZE / 2.0) / NEBULA_SCALE
+            );
+            let intensity = (n - 0.4).max(0.0) * 0.5;
+            let color = Color::new(0.4, 0.1, 0.6, intensity);
+            draw_rectangle(wx, wy, CHUNK_SIZE, CHUNK_SIZE, color);
+        }
+    }
+}
+
 #[macroquad::main("Space Explorer")]
 async fn main() {
     // Initialize
@@ -252,9 +275,9 @@ async fn main() {
                 let ship_chunk = world_to_chunk(player.ship.pos.x, player.ship.pos.y);
                 world.stream_around(ship_chunk, LOAD_RADIUS);
                 // Background Stars Rendering
-                for layer in &layers {
-                    layer.draw(player.ship.pos.x, player.ship.pos.y);
-                }
+                // for layer in &layers {
+                //     layer.draw(player.ship.pos.x, player.ship.pos.y);
+                // }
 
                 // --- WORLD SPACE: activate the follow-camera, then draw world things ---
                 let cam = Camera2D::from_display_rect(Rect::new(
@@ -264,6 +287,7 @@ async fn main() {
                     screen_height(),
                 ));
                 set_camera(&cam);
+                draw_nebula(&world, &player, world_seed);
                 let mouse_world = cam.screen_to_world(mouse_position().into());
 
                 draw_world(&world, &player);
