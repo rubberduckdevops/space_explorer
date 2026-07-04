@@ -131,7 +131,9 @@ fn spawn_generator(seed:u64) -> (Sender<(i32,i32)>, Receiver<Chunk>) {
     let (res_tx, res_rx) = channel::<Chunk>();
     std::thread::spawn(move || {
         while let Ok((cx, cy)) = req_rx.recv() {
+            log::debug!("Generating Chunk: {},{}", &cx, &cy);
             let chunk = generate_chunk(seed, cx, cy);
+            
             if res_tx.send(chunk).is_err() {
                 break; // main side hung up
             }

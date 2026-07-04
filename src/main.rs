@@ -205,6 +205,7 @@ fn draw_nebula(world: &World, player: &Player, seed: u64) {
 
 #[macroquad::main("Space Explorer")]
 async fn main() {
+    env_logger::init();
     // Initialize
     log::info!("Initalizing Systems");
     log::info!("Loading Previous Save");
@@ -224,11 +225,6 @@ async fn main() {
         .map(|s| Player::load_player(s.player.clone()))
         .unwrap_or_else(|| Player::new());
 
-    let layers = [
-        StarLayer::new(40, 600.0, 0.15, 1.0, Color::new(0.6, 0.6, 0.7, 1.0)),
-        StarLayer::new(30, 500.0, 0.30, 1.5, Color::new(0.8, 0.8, 0.9, 1.0)),
-        StarLayer::new(20, 400.0, 0.55, 2.0, WHITE),
-    ];
 
     // Start Game loop here
     let mut game_state = GameState::Exploring;
@@ -274,14 +270,15 @@ async fn main() {
                     screen_height(),
                 ));
                 set_camera(&cam);
-                draw_nebula(&world, &player, world_seed);
                 let mouse_world = cam.screen_to_world(mouse_position().into());
 
+                
+                // Draw Environment and Players
+                draw_nebula(&world, &player, world_seed);
                 draw_world(&world, &player);
-
-                //Player Drawing
                 player.ship.draw();
 
+                
                 let target = nearest_dungeon(&world, &player);
                 if let Some(d) = target {
                     draw_circle_lines(d.x, d.y, d.radius + 5.0, 3.0, YELLOW);
