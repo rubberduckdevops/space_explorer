@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use crate::{
     chunk::{
-        LOAD_RADIUS, World, draw_nebula, draw_world, hash_seed_string, nearest_dungeon,
+        LOAD_RADIUS, World, draw_minimap, draw_nebula, draw_world, hash_seed_string, nearest_dungeon,
         world_to_chunk,
     },
     combat::{CombatInstance, CombatOutcome},
@@ -145,6 +145,7 @@ async fn main() {
                 }
                 ui::exploring_hud(&world, ship_chunk, mouse_world, dungeon_in_range);
                 player.draw_player_stats();
+                draw_minimap(&world, &player);
             }
             GameState::Paused => {
                 set_default_camera();

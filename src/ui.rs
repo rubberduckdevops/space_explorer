@@ -1,5 +1,5 @@
+use macroquad::ui::{Skin, hash, root_ui, widgets};
 use macroquad::{prelude::*, text};
-use macroquad::ui::{hash, root_ui, widgets, Skin};
 
 use crate::chunk::World;
 use crate::common::{draw_bottom_left, draw_bottom_right, draw_centered};
@@ -40,7 +40,13 @@ pub fn exploring_hud(
     dungeon_in_range: bool,
 ) {
     if dungeon_in_range {
-        draw_text("● Dungeon in range — press E to enter", 10.0, 90.0, 26.0, RED);
+        draw_text(
+            "● Dungeon in range — press E to enter",
+            10.0,
+            90.0,
+            26.0,
+            RED,
+        );
     }
     draw_bottom_left(
         &[
@@ -94,7 +100,7 @@ pub fn pause_menu() -> Option<PauseAction> {
 }
 
 pub enum StartMenuAction {
-    Start
+    Start,
 }
 
 pub fn start_menu(texture: &Texture2D) -> Option<StartMenuAction> {
@@ -106,12 +112,17 @@ pub fn start_menu(texture: &Texture2D) -> Option<StartMenuAction> {
         Color::new(0.0, 0.0, 0.0, 0.6),
     );
     let image_width = texture.width() / 2.0;
-    let image_height = texture.height() /2.0;
-    draw_texture(texture, screen_width() / 2.0 - image_width, screen_height() /2.0 - image_height, WHITE);
+    let image_height = texture.height() / 2.0;
+    draw_texture(
+        texture,
+        screen_width() / 2.0 - image_width,
+        screen_height() / 2.0 - image_height,
+        WHITE,
+    );
     draw_centered("Space Explorer - v0.0.1", 50.0, 56, WHITE);
-    
+
     if button("START", centered_button(screen_height() - 100.0)) {
-        return Some(StartMenuAction::Start)
+        return Some(StartMenuAction::Start);
     }
     None
 }

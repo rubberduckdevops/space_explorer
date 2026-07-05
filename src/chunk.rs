@@ -7,7 +7,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 pub const CHUNK_SIZE: f32 = 512.0;
 pub const NEBULA_SCALE: f32 = 1400.0;
 pub const LOAD_RADIUS: i32 = 10;
-pub const CHUNK_DEBUG: bool = false;
+pub const CHUNK_DEBUG: bool = true;
 pub const INTERACT_RANGE: f32 = 70.0;
 #[derive(Clone, Copy, PartialEq)]
 pub enum ObjectKind {
@@ -314,6 +314,44 @@ pub fn draw_nebula(world: &World, player: &Player, seed: u64) {
             draw_rectangle(wx, wy, CHUNK_SIZE, CHUNK_SIZE, color);
         }
     }
+}
+
+/// Draws a minimap in the top-right corner. Must be called AFTER
+/// `set_default_camera()` so it's positioned in screen space, not world space.
+pub fn draw_minimap(world: &World, player: &Player) {
+    const MM_SIZE: f32 = 200.0; // minimap box, pixels
+    const MARGIN: f32 = 10.0;
+    const VIEW: f32 = (LOAD_RADIUS as f32 - 2.0) * CHUNK_SIZE; // Give a little buffer to load new chunks
+    let mm_x = screen_width() - MM_SIZE - MARGIN;
+    let mm_y = MARGIN;
+    let center_x = mm_x + MM_SIZE / 2.0;
+    let center_y = mm_y + MM_SIZE / 2.0;
+    let scale = MM_SIZE / (2.0 * VIEW); // world units -> minimap pixels
+
+    // Backdrop + border.
+    draw_rectangle(mm_x, mm_y, MM_SIZE, MM_SIZE, Color::new(0.0, 0.0, 0.0, 0.6));
+    draw_rectangle_lines(mm_x, mm_y, MM_SIZE, MM_SIZE, 2.0, GRAY);
+
+    // Plot every loaded object relative to the player. Order doesn't matter.
+    for chunk in world.loaded.values() {
+        for obj in &chunk.objects {
+            let dx = obj.x - player.ship.pos.x;
+            let dy = obj.y - player.ship.pos.y;
+            if dx.abs() > VIEW || dy.abs() > VIEW {
+                continue; // outside the minimap's view range
+            }
+            let color = if obj.kind == ObjectKind::Dungeon && player.is_dungeon_cleared(&obj.id) {
+                DARKGRAY
+            } else {
+                object_color(obj.kind)
+            };
+            // World camera (from_display_rect) flips Y, so negate dy to match.
+            draw_circle(center_x + dx * scale, center_y - dy * scale, 2.0, color);
+        }
+    }
+
+    // The player is always dead center.
+    draw_circle(center_x, center_y, 3.0, WHITE);
 }
 
 pub fn nearest_dungeon(world: &World, player: &Player) -> Option<SpaceObject> {

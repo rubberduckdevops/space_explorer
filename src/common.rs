@@ -1,6 +1,5 @@
 use macroquad::prelude::*;
 
-
 // #[allow(dead_code)]
 // pub struct StarLayer {
 //     pub stars: Vec<Vec2>,
@@ -86,8 +85,6 @@ pub fn draw_bottom_right(lines: &[&str], font_size: u16, color: Color) {
         );
     }
 }
-
-
 
 pub mod save {
     use std::collections::HashSet;
