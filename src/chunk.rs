@@ -43,9 +43,13 @@ pub fn generate_chunk(world_seed: u64, cx: i32, cy: i32) -> Chunk {
         (origin_y + CHUNK_SIZE / 2.0) / NEBULA_SCALE,
     );
 
-    let base = rng.range_i32(1, 4);
-    let bonus = (density * 8.0) as i32;
-    let count = base + bonus;
+    // Space is vast and mostly empty. Objects only appear where the nebula
+    // density is high enough, and even there they stay sparse.
+    let count = if density < 0.6 {
+        0
+    } else {
+        rng.range_i32(0, 3) + ((density - 0.6) * 5.0) as i32
+    };
 
     let mut objects = Vec::new();
 
